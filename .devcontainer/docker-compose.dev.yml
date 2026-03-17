@@ -1,0 +1,16 @@
+services:
+  frontend:
+    # Overrides default command so things don't shut down after the process ends.
+    command: sleep infinity
+
+    # Mounts the project folder to enable hot reloading and editing from inside the container
+    volumes:
+      - ..:/workspace
+
+  backend:
+    healthcheck:
+      test: [ "CMD", "curl", "-f", "http://localhost:8000/health" ]
+      interval: 10s
+      timeout: 5s
+      retries: 30
+      start_period: 60s

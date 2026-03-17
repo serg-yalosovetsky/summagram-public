@@ -1,0 +1,35 @@
+fastapi
+uvicorn
+python-dotenv
+httpx
+loguru
+numpy>=2.0.0
+pandas
+huggingface_hub
+pillow
+# LlamaIndex & Tracing
+llama-index-core
+llama-index-embeddings-huggingface
+llama-index-llms-openai-like
+# Text inference via SGLang (OpenAI-compatible); openai client for sglang_client
+openai>=1.0.0
+opentelemetry-api
+opentelemetry-sdk
+opentelemetry-exporter-otlp
+openinference-instrumentation-llama-index
+watchdog
+num2words
+# NLP pipeline: Russian/Ukrainian morphology & NER
+pymorphy3
+natasha
+rapidfuzz
+dateparser
+transformers  # lang-uk Ukrainian NER (feature-flagged, NLP_LANGUK_NER_ENABLED=false by default)
+# New media processing libraries
+kreuzberg[async]
+ollama
+scenedetect
+ffmpeg-python
+chromadb
+sse-starlette
+asyncpg

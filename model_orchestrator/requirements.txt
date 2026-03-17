@@ -1,0 +1,7 @@
+fastapi
+uvicorn
+httpx
+docker
+python-multipart
+pydantic
+loguru

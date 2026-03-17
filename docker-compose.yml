@@ -1,0 +1,296 @@
+services:
+  backend:
+    build:
+      context: .
+      dockerfile: backend/Dockerfile
+    depends_on:
+      model-orchestrator:
+        condition: service_healthy
+      chroma:
+        condition: service_started
+    ports:
+      - "8003:8000"
+    volumes:
+      - ./models_cache:/app/models_cache
+      - ./backend:/app/backend
+      - ./etl:/app/etl
+      - ./shared:/app/shared
+      - ./logs:/app/logs
+      - ./.env:/app/.env
+      - ./storage/media:/app/storage/media
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    environment:
+      - OTEL_ENABLED=true
+      - OTEL_EXPORTER_OTLP_ENDPOINT=http://jaeger:4317
+      - HF_HOME=/app/models_cache
+
+      # Внутренние адреса (НЕ localhost)
+      - LLM_SERVER_URL=http://model-orchestrator:8000/v1
+      - ORCHESTRATOR_URL=http://model-orchestrator:8000/v1
+      - VISION_SERVER_URL=http://model-orchestrator:8000/v1
+      - AUDIO_SERVER_URL=http://model-orchestrator:8000/v1
+
+      - CHROMA_DB_IP=chroma
+      - CHROMA_DB_PORT=8000
+
+      - ETL_URL=http://etl:8000
+      - BACKEND_URL=http://backend:8000
+      - POSTGRES_DSN=postgresql://summagram:fYfzQ9qdv2qLYYyD3jOF0z7yc2PyFVIFj57LrJI%2BJ50%3D@postgres:5432/summagram
+    restart: unless-stopped
+    gpus: all
+    healthcheck:
+      test: [ "CMD", "curl", "-f", "http://localhost:8000/health" ]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 120s
+
+  frontend:
+    build:
+      context: ./v0
+      dockerfile: Dockerfile
+    ports:
+      - "3000:3000"
+    volumes:
+      - ./v0:/app
+      - /app/node_modules
+      - /app/.next
+    depends_on:
+      backend:
+        condition: service_healthy
+    environment:
+      - NEXT_PUBLIC_API_URL=http://backend:8000
+      - NEXT_PUBLIC_ETL_URL=http://etl:8000
+    restart: unless-stopped
+
+  etl:
+    build:
+      context: .
+      dockerfile: etl/Dockerfile
+    env_file:
+      - .env
+    ports:
+      - "8002:8000"
+    volumes:
+      - ./etl:/app/etl
+      - ./shared:/app/shared
+      - ./logs:/app/logs
+      - ./.env:/app/.env
+      - ./summagram_session.session:/app/summagram_session.session
+      - ./storage/media:/app/storage/media
+    environment:
+      - OTEL_ENABLED=true
+      - OTEL_EXPORTER_OTLP_ENDPOINT=http://jaeger:4317
+
+      # Внутренние адреса (НЕ localhost)
+      - LLM_API_BASE=http://model-orchestrator:8000/v1
+      - ORCHESTRATOR_URL=http://model-orchestrator:8000/v1
+      - BACKEND_URL=http://backend:8000
+
+      - CHROMA_DB_IP=chroma
+      - CHROMA_DB_PORT=8000
+
+      - LLM_PROVIDER=openai
+      - LLM_API_KEY=local-dummy
+      - POSTGRES_DSN=postgresql://summagram:fYfzQ9qdv2qLYYyD3jOF0z7yc2PyFVIFj57LrJI%2BJ50%3D@postgres:5432/summagram
+    restart: unless-stopped
+    healthcheck:
+      test: [ "CMD", "curl", "-f", "http://localhost:8000/health" ]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 120s
+
+  jaeger:
+    image: jaegertracing/jaeger:2.2.0
+    command: [ "--config=/etc/jaeger/config.yaml" ]
+    ports:
+      - "16686:16686"
+      - "4317:4317"
+      - "4318:4318"
+    volumes:
+      - ./jaeger-config.yaml:/etc/jaeger/config.yaml
+    restart: unless-stopped
+    environment:
+      - LOG_LEVEL=error
+
+  postgres:
+    image: postgres:15-alpine
+    environment:
+      - POSTGRES_USER=summagram
+      - POSTGRES_PASSWORD=fYfzQ9qdv2qLYYyD3jOF0z7yc2PyFVIFj57LrJI+J50=
+      - POSTGRES_DB=summagram
+    ports:
+      - "8432:5432"
+    volumes:
+      - ./postgres_data:/var/lib/postgresql/data
+    restart: unless-stopped
+    healthcheck:
+      test: [ "CMD-SHELL", "pg_isready -U summagram" ]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  chroma:
+    image: chromadb/chroma:latest
+    ports:
+      - "8001:8000"
+    volumes:
+      - ./chroma_data:/data
+    environment:
+      - CHROMA_OPEN_TELEMETRY__ENDPOINT=http://jaeger:4317
+      - CHROMA_OPEN_TELEMETRY__SERVICE_NAME=summagram_chroma
+      - OTEL_TRACES_EXPORTER=otlp
+      - OTEL_METRICS_EXPORTER=none
+      - ANONYMIZED_TELEMETRY=FALSE
+    depends_on:
+      - jaeger
+    restart: unless-stopped
+
+  model-orchestrator:
+    build:
+      context: ./model_orchestrator
+      dockerfile: Dockerfile
+    ports:
+      - "8004:8000"
+    volumes:
+      - ./model_orchestrator:/app
+      - ./shared:/app/shared
+      - ./logs:/app/logs
+    environment:
+      - BACKEND_URL=http://backend:8000
+
+      # vLLM workers; orchestrator manages them via HTTP sleep/wake endpoints.
+      - TEXT_VLLM_URL=http://text-vllm:8000
+      - VISION_VLLM_URL=http://vision-vllm:8000
+      # Whisper ASR (OpenAI-compatible /v1/audio/transcriptions)
+      - AUDIO_WHISPER_URL=http://audio-whisper:8000
+      - VLLM_API_KEY=local-dev-key
+    depends_on:
+      text-vllm:
+        condition: service_healthy
+    networks:
+      - llm
+      - default
+    restart: unless-stopped
+    healthcheck:
+      test: [ "CMD", "curl", "-f", "http://localhost:8000/health" ]
+      interval: 15s
+      timeout: 5s
+      retries: 20
+
+  # --- MODEL SERVICES ---
+  # Startup bootstrap order (enforced by Compose):
+  #   vision-vllm (healthy) → vision-sleeper (sleeps it, exits 0) → text-vllm (awake)
+  #   audio-whisper starts independently (no GPU contention — lightweight ASR)
+  #
+  # After bootstrap, the orchestrator owns runtime sleep/wake via HTTP.
+  # VLLM_SERVER_DEV_MODE=1 exposes /sleep, /wake_up, /is_sleeping —
+  # reachable only on the internal llm network (NOT exposed externally).
+
+  vision-vllm:
+    image: vllm/vllm-openai:latest
+    # Starts FIRST. Low gpu-memory-utilization (0.25 ≈ 2 GiB) avoids OOM during bootstrap;
+    # vision-sleeper immediately puts it to sleep (level=2) freeing all VRAM.
+    entrypoint: >
+      /bin/bash -c "pip install -q num2words && exec python3 -m vllm.entrypoints.openai.api_server \"$$@\"" --
+    command: >
+      ${HF_MODEL_MEDIA:-Qwen/Qwen2.5-VL-3B-Instruct} --host 0.0.0.0 --port 8000
+      --enable-sleep-mode --served-model-name vision --api-key local-dev-key
+      --dtype auto --max-model-len 2048 --limit-mm-per-prompt '{"image": 4}'
+      --gpu-memory-utilization 0.25 --max-num-seqs 1 --enforce-eager
+    environment:
+      VLLM_SERVER_DEV_MODE: "1"
+      HUGGING_FACE_HUB_TOKEN: ${HUGGING_FACE_HUB_TOKEN:-}
+      HF_HOME: /root/.cache/huggingface
+    volumes:
+      - ./models_cache:/root/.cache/huggingface
+    gpus: all
+    shm_size: "16g"
+    restart: unless-stopped
+    networks:
+      - llm
+    healthcheck:
+      test: [ "CMD", "curl", "-fsS", "-H", "Authorization: Bearer local-dev-key", "http://localhost:8000/v1/models" ]
+      interval: 30s
+      timeout: 10s
+      retries: 60
+      start_period: 300s
+
+  vision-sleeper:
+    # One-shot: sleeps vision-vllm at level=2, polls until confirmed, then exits 0.
+    # audio-vllm only starts after this succeeds (service_completed_successfully).
+    image: curlimages/curl:8.10.1
+    depends_on:
+      vision-vllm:
+        condition: service_healthy
+    command: >
+      sh -ec '
+        curl -fsS -X POST "http://vision-vllm:8000/sleep?level=2";
+        i=0; while [ $$i -lt 30 ]; do
+          curl -fsS http://vision-vllm:8000/is_sleeping | grep -q is_sleeping.*true && exit 0;
+          sleep 2; i=$$(($$i+1));
+        done;
+        echo "vision-sleeper: timed out waiting for sleep confirmation" >&2; exit 1
+      '
+    networks:
+      - llm
+    restart: "no"
+
+  audio-whisper:
+    # Lightweight faster-whisper ASR — OpenAI-compatible /v1/audio/transcriptions.
+    # Starts independently; no GPU contention with the vLLM models.
+    image: fedirz/faster-whisper-server:latest-cuda
+    environment:
+      WHISPER__MODEL: ${HF_MODEL_AUDIO:-Systran/faster-whisper-large-v3}
+      WHISPER__MODEL_LOCAL_FILES_ONLY: "false"
+      WHISPER__INFERENCE_DEVICE: cuda
+      HUGGING_FACE_HUB_TOKEN: ${HUGGING_FACE_HUB_TOKEN:-}
+      HF_TOKEN: ${HUGGING_FACE_HUB_TOKEN:-}
+      HF_HOME: /root/.cache/huggingface
+    volumes:
+      - ./models_cache:/root/.cache/huggingface
+    gpus: all
+    restart: unless-stopped
+    networks:
+      - llm
+    healthcheck:
+      test: [ "CMD", "curl", "-fsS", "http://localhost:8000/health" ]
+      interval: 30s
+      timeout: 10s
+      retries: 20
+      start_period: 120s
+
+  text-vllm:
+    image: vllm/vllm-openai:latest
+    # Starts after vision is confirmed sleeping (audio-whisper is independent).
+    depends_on:
+      vision-sleeper:
+        condition: service_completed_successfully
+    command: >
+      ${HF_MODEL_TEXT:-Qwen/Qwen2.5-Coder-7B-Instruct} --host 0.0.0.0 --port 8000
+      --enable-sleep-mode --served-model-name text --api-key local-dev-key
+      --dtype auto --max-model-len 6092 --gpu-memory-utilization 0.7
+      --max-num-seqs 1 --max-num-batched-tokens 2048
+      --cpu-offload-gb 6 --swap-space 8 --enforce-eager
+    environment:
+      VLLM_SERVER_DEV_MODE: "1"
+      HUGGING_FACE_HUB_TOKEN: ${HUGGING_FACE_HUB_TOKEN:-}
+      HF_HOME: /root/.cache/huggingface
+    volumes:
+      - ./models_cache:/root/.cache/huggingface
+    gpus: all
+    shm_size: "16g"
+    restart: unless-stopped
+    networks:
+      - llm
+    healthcheck:
+      test: [ "CMD", "curl", "-fsS", "-H", "Authorization: Bearer local-dev-key", "http://localhost:8000/v1/models" ]
+      interval: 30s
+      timeout: 10s
+      retries: 60
+      start_period: 300s
+
+networks:
+  llm:
+    driver: bridge

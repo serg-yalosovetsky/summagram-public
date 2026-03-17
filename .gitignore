@@ -1,0 +1,52 @@
+# Python-generated files
+__pycache__/
+*.py[oc]
+build/
+dist/
+wheels/
+*.egg-info
+
+# Virtual environments
+.venv
+.env
+.env.*
+!.env.example
+
+# Data and Models
+storage/
+models_cache/
+backend/storage/media/
+*.session
+postgres_data/
+
+# Tooling and temporary scripts
+verify_video_analysis.py
+verify_chat_api.py
+
+# Database
+*.db
+*.sqlite*
+
+# Frontend dependencies and cache (repository-wide)
+node_modules/
+.pnpm-store/
+v0/.next/
+v0/.swc/
+v0/playwright-report/
+v0/test-results/
+
+
+#Ignore cursor AI rules
+.cursor/rules/codacy.mdc
+/logs/
+.cursor/
+.vscode/
+.cursorrules
+.pytest_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+
+# Chroma DB
+chroma_data/
+chroma.sqlite3

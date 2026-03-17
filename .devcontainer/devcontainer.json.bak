@@ -1,0 +1,23 @@
+{
+    "name": "Summagram Microservices",
+    "dockerComposeFile": [
+        "../docker-compose.yml",
+        "docker-compose.dev.yml"
+    ],
+    "service": "frontend",
+    "workspaceFolder": "/workspace",
+    "customizations": {
+        "vscode": {
+            "extensions": [
+                "ms-python.python",
+                "ms-python.vscode-pylance",
+                "ms-azuretools.vscode-docker",
+                "tamasfe.even-better-toml"
+            ]
+        }
+    },
+    "remoteUser": "root",
+    "features": {
+        "ghcr.io/devcontainers/features/docker-in-docker:2": {}
+    }
+}

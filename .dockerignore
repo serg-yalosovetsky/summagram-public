@@ -1,0 +1,26 @@
+**/.git
+**/.venv
+**/venv
+**/node_modules
+**/__pycache__
+**/*.pyc
+**/*.pyo
+**/.pytest_cache
+
+# Data directories
+postgres_data/
+chroma_data/
+models_cache/
+logs/
+storage/
+
+# Environment files
+.env
+.env.*
+
+# Frontend specific
+v0/.next/
+v0/node_modules/
+
+# Python specific
+.pytest_cache/

@@ -1,0 +1,21 @@
+service:
+  extensions: [healthcheckv2, zpages]
+  pipelines:
+    traces:
+      receivers: [otlp]
+      exporters: [jaeger_storage_exporter]
+
+extensions:
+  healthcheckv2:
+    endpoint: 0.0.0.0:13133
+  zpages:
+    endpoint: 0.0.0.0:55679
+
+receivers:
+  otlp:
+    protocols:
+      grpc:
+
+exporters:
+  jaeger_storage_exporter:
+    trace_storage: memory

@@ -80,9 +80,15 @@ jobs:
         if: hashFiles('**/test_*.py','**/*_test.py','**/tests/**') != ''
         run: |
           python -m pip install -q pytest pytest-cov
-          pip install -q -e . 2>/dev/null || pip install -q -r requirements.txt 2>/dev/null || true
-          # PYTHONPATH=. so flat-layout repos (package dir at repo root) import cleanly
-          PYTHONPATH=. pytest --cov=. --cov-report=xml -q || true
+          # best-effort dependency install from the common places repos declare them
+          pip install -q -e . 2>/dev/null || true
+          for req in requirements.txt requirements-dev.txt dev-requirements.txt \
+                     test-requirements.txt requirements/dev.txt requirements/test.txt; do
+            [ -f "$req" ] && pip install -q -r "$req" 2>/dev/null || true
+          done
+          # PYTHONPATH=. for flat-layout imports; --continue-on-collection-errors so one
+          # un-importable test module (missing heavy dep) doesn't zero the whole run
+          PYTHONPATH=. pytest --cov=. --cov-report=xml -q --continue-on-collection-errors || true
 
       - name: setup go
         if: hashFiles('**/*_test.go') != ''
